@@ -22,6 +22,7 @@ base_data_path = "../FinalDataset"
 base_alexnet_path = "../AlexNet/"
 
 classes = os.listdir(base_data_path + "/train")
+print(classes)
 
 train_loader, val_loader, test_loader = preprocessing.getLoaders(batch_size=1)
 
@@ -119,6 +120,30 @@ def get_test_accuracy(model, test_loader):
     return correct / total
 
 
+def get_test_accuracy_for_label(model, test_loader, label):
+    data = test_loader
+    correct = 0
+    total = 0
+    for imgs, labels in data:
+        
+        
+        #############################################
+        # To Enable GPU Usage
+        if use_cuda and torch.cuda.is_available():
+          imgs = imgs.cuda()
+          labels = labels.cuda()
+        #############################################
+
+        if (labels[0] == label):
+            output = model(imgs)
+            
+            # Select index with maximum prediction score
+            pred = output.max(1, keepdim=True)[1]
+            correct += pred.eq(labels.view_as(pred)).sum().item()
+            total += imgs.shape[0]
+    return correct / total
+
+
 
 def train_transfer(model, train_data, valid_data, batch_size=64, learning_rate=0.01, momentum=0.9, num_epochs=10):
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -205,7 +230,8 @@ best_model.load_state_dict(state)
 if use_cuda and torch.cuda.is_available():
     best_model.cuda()
 
-test_dataloader = torch.utils.data.DataLoader(test_data_alexnet, batch_size=256, shuffle=True)
-test_accuracy = get_test_accuracy(best_model, test_dataloader)
-print(f"Test acc: {test_accuracy}")
+test_dataloader = torch.utils.data.DataLoader(test_data_alexnet, batch_size=1, shuffle=True)
+for i, label in enumerate(classes):
+    test_accuracy = get_test_accuracy_for_label(best_model, test_dataloader, i)
+    print(f"{label} has test acc: {test_accuracy}")
 
