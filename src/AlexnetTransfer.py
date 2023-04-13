@@ -220,11 +220,11 @@ else:
   print('CUDA is not available.  Training on CPU ...')
   
 #proper model
-#train_transfer(model, train_data_alexnet, valid_data_alexnet, batch_size = 256, learning_rate = 0.01, num_epochs=15)
+train_transfer(model, train_data_alexnet, valid_data_alexnet, batch_size = 256, learning_rate = 0.01, num_epochs=25)
 
 
 best_model = CNN_Transfer()
-best_model_path = get_model_name(best_model.name, 256, 0.01, 14)
+best_model_path = get_model_name(best_model.name, 256, 0.01, 24)
 state = torch.load(best_model_path)
 best_model.load_state_dict(state)
 if use_cuda and torch.cuda.is_available():
