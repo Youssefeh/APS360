@@ -1,6 +1,6 @@
 import shutil
 import rembg
-from PIL import Image
+from PIL import Image, ImageChops
 import easygui as eg
 import os
 import torch
@@ -126,11 +126,86 @@ def getLabel(imagename):
     else:
         print("WTFFFFFFFFF")
 
+#goal; shift image until it satisfies overlap concerns
+def checkOverlap(bounds, bound, inputImg):
+    num_transforms = 3 #only allow up to three transforms before quitting
+    curr = 0
+    success = False 
+
+    while (success is False):
+        if (curr == num_transforms):
+            break
+        areaNew = (bound[2] - bound[0])*(bound[3] - bound[1])
+        changed = 0
+        dirX = 0
+        dirY = 0
+        for existingBound in bounds:
+            
+            #calculate intersection of objects
+            areaObj = (existingBound[2] - existingBound[0])*(existingBound[3] - existingBound[1])
+            x_dist = (min(bound[2], existingBound[2]) -
+              max(bound[0], existingBound[0]) )
+  
+            y_dist = (min(bound[3], existingBound[3]) -
+              max(bound[1], existingBound[1]) )
+            areaI = 0
+            if x_dist > 0 and y_dist > 0:
+                areaI = x_dist * y_dist
+            IoU = areaI/(areaNew + areaObj - areaI)
+            if (IoU > 0.8): #we have a bad overlap, bad
+                return False
+            elif(IoU > 0.5):
+                
+                #set offset direction
+                if (changed == 0):
+                    #print(bound[0], bound[1], bound[2], bound[3])
+                    if (bound[2] + 20 > 512 and bound[0] -20 < 0):
+                        dirX = 0
+                    elif (bound[2] + 20 > 512):
+                        dirX = -20
+                    elif (bound[0] - 20 < 0):
+                        dirX = 20
+                    else:
+                        if (bound[0] > existingBound[0]):
+                            dirX = 20
+                        else:
+                            dirX = -20
+
+
+                    if (bound[3] + 20 > 384 and bound[1] -20 < 0):
+                        dirY = 0
+                    elif (bound[3] + 20 > 384):
+                        dirY = -20
+                    elif (bound[1] - 20 < 0):
+                        dirY = 20
+                    else:
+                        if (bound[1] > existingBound[1]):
+                            dirY = 20
+                        else:
+                            dirY = -20                        
+                    if (dirX == 0 and dirY == 0):
+                        changed = 0
+                        continue
+                changed = 1
+                inputImg = ImageChops.offset(inputImg, dirX, dirY)
+
+                bound = inputImg.getbbox()
+                curr+=1
+                break
+        if(changed == 0):
+            break
+    return True
+            
+
+
+
+    
+
 
 #task: build composite images with a varying number of items, and store bounding boxes for those items
 def buildRCNNImages():
     path = os.path.abspath("../imgs")
-    output = "../RCNNSet"
+    output = "../RCNNSetUpdated"
     outputImgs = output + "/images"
     outputBounds = output + "/bounds"
 
@@ -144,20 +219,32 @@ def buildRCNNImages():
     counter = 0
     imageList = os.listdir(path)
     i = 0
+    allBounds = []
     while i < len(imageList):
-        flag = 0
-        numObjs = random.randint(2, 5)
-        print(i)
-
-        boundFile = open(outputBounds + "/" + str(counter) + ".txt", "w")
+        numObjs = random.randint(2, 4)
         maxSize = (0,0)
+        boundFile = open(outputBounds + "/" + str(counter) + ".txt", "w")
         for k in range(0, numObjs):
             maxSize = max(Image.open(path + "/" + imageList[i+k]).size, maxSize)
-        finalImg = Image.new('RGB', maxSize, "WHITE")
-        for j in range(0, numObjs):
+        baseImg = Image.open(path+"/" + imageList[i])
+        resized = baseImg.resize(maxSize)
+        bgRemoved = rembg.remove(resized)
+        bounds = bgRemoved.getbbox()
+        allBounds.append(bounds)
+        boundFile.write(str(bounds[0]) + " " + str(bounds[1]) + " "+ str(bounds[2]) + " " + str(bounds[3]) + " ")
+        label = getLabel(imageList[i])
+        boundFile.write(str(label))
+        boundFile.write("\n")
+
+        for j in range(1, numObjs):
             currImg = Image.open(path + "/" + imageList[i+j])
             currOut = rembg.remove(currImg)
             bounds = currOut.getbbox()
+            check = checkOverlap(allBounds, bounds, currOut)
+            if (check is False):
+                continue
+            bounds = currOut.getbbox()
+            allBounds.append(bounds)
             if (bounds != (0,0,512,384)):
                 flag = 1
                 boundFile.write(str(bounds[0]) + " " + str(bounds[1]) + " " + str(bounds[2]) + " "+ str(bounds[3]) + " ")
@@ -167,10 +254,12 @@ def buildRCNNImages():
                 boundFile.write("\n")
 
 
-            finalImg.paste(currOut, (0,0), currOut)
+            resized.paste(currOut, (0,0), currOut)
+            
         i = i + numObjs
-        if (flag == 1):
-            finalImg.convert('RGB').save(outputImgs + "/" + str(counter) + ".jpg", "JPEG")
+        resized.convert('RGB').save(outputImgs + "/" + str(counter) + ".jpg", "JPEG")
+        print("Saved " + str(counter) + " with " + str(numObjs) + " images: " + str(i))
+        #if (counter == 10): break
         counter+=1
 
 
@@ -179,6 +268,13 @@ def buildRCNNImages():
 
 
 buildRCNNImages()
+img = Image.open("/Users/jasnoorguliani/Downloads/IMG_6537.jpg")
+size = img.size
+output = rembg.remove(img)
+new_image = Image.new("RGBA", size, "WHITE")
+new_image.paste(output, (0,0), output)
+new_image.convert('RGB').save("/Users/jasnoorguliani/Downloads/IMG_6537.jpg", "JPEG") 
+
 '''
 input_path = "/Users/jasnoorguliani/Documents/courses/aps360/APS360/TrashNet_original/glass/glass1.jpg"
 output_path = "/Users/jasnoorguliani/Documents/courses/aps360/APS360/TrashNet_original/glass/glass1_.png"
@@ -195,4 +291,43 @@ output2.paste(output, (0, 0), output)
 new_image = Image.new("RGBA", output2.size, "WHITE") # Create a white rgba background
 new_image.paste(output2, (0, 0), output2)              # Paste the image on the background. Go to the links given below for details.
 new_image.convert('RGB').save(output_path2, "JPEG") 
+'''
+
+'''
+dataset = RCNNDataset()
+with torch.no_grad():
+    i = 0
+    for img, target in test_loader:
+        if i == max_imgs:
+            break;
+
+        output = best_model(img)
+        output = output[0]
+        print(output)
+
+        fig, ax = plt.subplots(1, 2)
+
+        ax1 = ax[0]
+        ax2 = ax[1]
+
+        ax1.set_xlabel('Input image and segmentation')
+        ax2.set_xlabel('RCNN output')
+
+        # render input data
+        img = img[0]
+        boxes = target['boxes'][0]
+        labels = target['labels'][0]
+
+        ax1.imshow(img.permute(1, 2, 0))
+
+        for i in range(len(boxes)):
+            xmin, ymin, xmax, ymax = boxes[i]
+            label = labels[i]
+            if (label == 7):
+                continue;
+            rect = patches.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, linewidth=1, edgecolor=colors[label-1], facecolor='none')
+
+            ax1.text(xmin, ymin, names[label-1], color=colors[label-1])
+
+            ax1.add_patch(rect)
 '''
